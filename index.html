@@ -1,1 +1,483 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>2サーボ脚シミュレータ（合流膝＋遠位1本）</title>
+  <style>
+    :root { --bg:#0b0f14; --panel:#121824; --text:#e7edf6; --muted:#9fb0c4; --line:#263244; }
+    html,body{height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; background:var(--bg); color:var(--text);}
+    .wrap{display:grid; grid-template-columns: 360px 1fr; gap:12px; height:100%; box-sizing:border-box; padding:12px;}
+    .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; overflow:auto;}
+    canvas{width:100%; height:100%; background:#070a0f; border:1px solid var(--line); border-radius:12px;}
+    h1{font-size:16px; margin:0 0 10px;}
+    .row{display:grid; grid-template-columns: 1fr 110px; gap:8px; align-items:center; margin:8px 0;}
+    label{font-size:12px; color:var(--muted);}
+    input[type="number"], input[type="range"], button, select{
+      width:100%; box-sizing:border-box; background:#0b1220; color:var(--text);
+      border:1px solid var(--line); border-radius:10px; padding:8px;
+    }
+    input[type="range"]{padding:0; height:34px;}
+    .two{display:grid; grid-template-columns: 1fr 1fr; gap:8px;}
+    .btns{display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:10px;}
+    .pill{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
+    .tag{border:1px solid var(--line); border-radius:999px; padding:6px 10px; font-size:12px; color:var(--muted);}
+    .warn{color:#ffb4a8}
+    .ok{color:#a8ffcf}
+    .small{font-size:12px; color:var(--muted); line-height:1.5;}
+    .hr{height:1px; background:var(--line); margin:10px 0;}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <h1>2サーボ脚シミュレータ（合流膝＋遠位1本）</h1>
+    <div class="small">
+      モデル：サーボS1,S2（同じ高さ）→近位バー2本が膝Jで合流→遠位バー(J→足先F)。<br>
+      目標足先Fは「水平線上の点＋中点直上1点」を通る折れ線ループを等速で移動します。
+    </div>
 
+    <div class="hr"></div>
+
+    <div class="two">
+      <div>
+        <label>サーボ間隔 d (mm)</label>
+        <input id="d" type="number" value="40" step="1" />
+      </div>
+      <div>
+        <label>サーボ高さ yS (mm)</label>
+        <input id="yS" type="number" value="0" step="1" />
+      </div>
+    </div>
+
+    <div class="two">
+      <div>
+        <label>近位長 L1: S1→J (mm)</label>
+        <input id="L1" type="number" value="55" step="1" />
+      </div>
+      <div>
+        <label>近位長 L2: S2→J (mm)</label>
+        <input id="L2" type="number" value="55" step="1" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label>遠位長 L3: J→F (mm)</label>
+      <input id="L3" type="number" value="70" step="1" />
+    </div>
+
+    <div class="hr"></div>
+
+    <div class="two">
+      <div>
+        <label>地面高さ y0 (mm)</label>
+        <input id="y0" type="number" value="120" step="1" />
+      </div>
+      <div>
+        <label>スパン幅 W (mm)</label>
+        <input id="W" type="number" value="80" step="1" />
+      </div>
+    </div>
+
+    <div class="two">
+      <div>
+        <label>水平点の数 N (4〜6推奨)</label>
+        <input id="N" type="number" value="5" min="3" max="12" step="1" />
+      </div>
+      <div>
+        <label>頂点の高さ h (mm)</label>
+        <input id="h" type="number" value="35" step="1" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label>足先速度 v (mm/s)</label>
+      <input id="v" type="number" value="60" step="5" />
+    </div>
+
+    <div class="row">
+      <label>軌跡表示（点数）</label>
+      <input id="traceN" type="number" value="300" min="50" max="2000" step="50" />
+    </div>
+
+    <div class="btns">
+      <button id="play">▶ 再生</button>
+      <button id="reset">⟲ リセット</button>
+    </div>
+
+    <div class="pill">
+      <div class="tag">θ1: <span id="theta1">—</span>°</div>
+      <div class="tag">θ2: <span id="theta2">—</span>°</div>
+      <div class="tag">状態: <span id="status" class="warn">未計算</span></div>
+    </div>
+
+    <div class="hr"></div>
+    <div class="small">
+      <b>注意</b>：このモデルは「膝Jが <i>3つの円</i>（S1中心L1、S2中心L2、足先中心L3）の交点になる」前提です。<br>
+      パラメータによっては到達不能になります（その場合は状態が赤表示）。
+    </div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:12px;">
+    <canvas id="cv"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---- DOM
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+
+  const el = (id)=>document.getElementById(id);
+  const ui = {
+    d: el('d'), yS: el('yS'), L1: el('L1'), L2: el('L2'), L3: el('L3'),
+    y0: el('y0'), W: el('W'), N: el('N'), h: el('h'),
+    v: el('v'), traceN: el('traceN'),
+    play: el('play'), reset: el('reset'),
+    theta1: el('theta1'), theta2: el('theta2'), status: el('status'),
+  };
+
+  // ---- Helpers
+  const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+  const hypot = Math.hypot;
+  const dist = (a,b)=>hypot(a.x-b.x, a.y-b.y);
+  const add = (a,b)=>({x:a.x+b.x,y:a.y+b.y});
+  const sub = (a,b)=>({x:a.x-b.x,y:a.y-b.y});
+  const mul = (a,s)=>({x:a.x*s,y:a.y*s});
+  const dot = (a,b)=>a.x*b.x+a.y*b.y;
+  const angDeg = (v)=>Math.atan2(v.y, v.x) * 180/Math.PI;
+
+  function resize() {
+    const rect = cv.getBoundingClientRect();
+    cv.width = Math.floor(rect.width * devicePixelRatio);
+    cv.height = Math.floor(rect.height * devicePixelRatio);
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- World <-> Screen
+  // World: x right, y down (扱いやすさ優先). ただし「直上」を視覚的に上へ＝yが小さい方向にする。
+  // なので y0 は大きいほど下、h は上に持ち上げる（y0 - h）。
+  let view = {scale: 3.2, ox: 0, oy: 0}; // will set in fit()
+
+  function worldToScreen(p){
+    return {x: p.x*view.scale + view.ox, y: p.y*view.scale + view.oy};
+  }
+
+  function fitToScene(scenePts){
+    // add margins and fit to canvas
+    const pad = 30 * devicePixelRatio;
+    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+    for(const p of scenePts){
+      minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x);
+      minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y);
+    }
+    const w = (maxX-minX) || 1;
+    const h = (maxY-minY) || 1;
+    const sx = (cv.width - 2*pad)/w;
+    const sy = (cv.height - 2*pad)/h;
+    view.scale = Math.min(sx,sy);
+    view.ox = pad - minX*view.scale;
+    view.oy = pad - minY*view.scale;
+  }
+
+  // ---- Circle intersection (two circles)
+  function circleIntersections(c1, r1, c2, r2){
+    const d = dist(c1,c2);
+    if (d > r1 + r2) return [];          // separate
+    if (d < Math.abs(r1 - r2)) return []; // contained
+    if (d === 0 && r1 === r2) return [];  // infinite (degenerate)
+    // point along line between centers
+    const a = (r1*r1 - r2*r2 + d*d) / (2*d);
+    const h2 = r1*r1 - a*a;
+    if (h2 < -1e-9) return [];
+    const h = Math.sqrt(Math.max(0,h2));
+    const v = {x:(c2.x-c1.x)/d, y:(c2.y-c1.y)/d};
+    const p = {x:c1.x + a*v.x, y:c1.y + a*v.y};
+    const perp = {x:-v.y, y:v.x};
+    const p1 = {x:p.x + h*perp.x, y:p.y + h*perp.y};
+    const p2 = {x:p.x - h*perp.x, y:p.y - h*perp.y};
+    if (h < 1e-9) return [p1];
+    return [p1,p2];
+  }
+
+  // ---- Path (polyline loop with equal speed)
+  function buildWaypoints(){
+    const y0 = +ui.y0.value;
+    const W  = +ui.W.value;
+    const N  = clamp(parseInt(ui.N.value||'5',10), 3, 30);
+    const h  = +ui.h.value;
+
+    const x0 = -W/2;
+    const x1 =  W/2;
+
+    const pts = [];
+    // N points on horizontal line y0
+    for(let i=0;i<N;i++){
+      const t = (N===1)?0.5:i/(N-1);
+      pts.push({x: x0 + (x1-x0)*t, y: y0});
+    }
+    // apex at midpoint, directly above
+    const apex = {x: 0, y: y0 - h};
+
+    // loop order: left->right along ground points, then apex, then back to left (closing)
+    const loop = pts.concat([apex, pts[0]]);
+    return {ground: pts, apex, loop};
+  }
+
+  function polylineLengths(poly){
+    const seg = [];
+    let total = 0;
+    for(let i=0;i<poly.length-1;i++){
+      const L = dist(poly[i], poly[i+1]);
+      seg.push(L);
+      total += L;
+    }
+    return {seg,total};
+  }
+
+  function pointOnPolyline(poly, lenInfo, s){
+    // s in [0,total)
+    let d = ((s % lenInfo.total) + lenInfo.total) % lenInfo.total;
+    for(let i=0;i<lenInfo.seg.length;i++){
+      const L = lenInfo.seg[i];
+      if (d <= L){
+        const a = poly[i], b = poly[i+1];
+        const t = (L<1e-9)?0:(d/L);
+        return {x: a.x + (b.x-a.x)*t, y: a.y + (b.y-a.y)*t};
+      }
+      d -= L;
+    }
+    return poly[poly.length-1];
+  }
+
+  // ---- IK: given foot F, solve knee J from intersection of circles (S1,L1) & (S2,L2), then pick the one matching |J-F|≈L3.
+  function solveKnee(S1,S2,L1,L2,F,L3){
+    const cand = circleIntersections(S1,L1,S2,L2);
+    if (cand.length===0) return {ok:false, reason:"S1-S2円が交わらない"};
+    // choose candidate with distance to foot closest to L3
+    let best=null, bestErr=Infinity;
+    for(const J of cand){
+      const e = Math.abs(dist(J,F)-L3);
+      if (e < bestErr){
+        bestErr = e;
+        best = J;
+      }
+    }
+    const tol = 1.5; // mm
+    if (bestErr > tol) return {ok:false, reason:`膝がL3条件を満たさない (誤差${bestErr.toFixed(1)}mm)`};
+    return {ok:true, J:best};
+  }
+
+  // ---- State
+  let running = false;
+  let tPrev = 0;
+  let sTravel = 0; // traveled length along path
+  let trace = [];  // foot trace points
+
+  function resetSim(){
+    sTravel = 0;
+    trace = [];
+    ui.status.textContent = "リセット";
+    ui.status.className = "warn";
+    ui.theta1.textContent = "—";
+    ui.theta2.textContent = "—";
+  }
+
+  // ---- Draw
+  function draw(scene){
+    ctx.clearRect(0,0,cv.width,cv.height);
+
+    // background grid (world mm grid)
+    const grid = 10; // mm
+    // decide grid step in px
+    const stepPx = grid*view.scale;
+    const minStep = 18 * devicePixelRatio;
+    const useGrid = stepPx >= minStep;
+
+    if (useGrid){
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.lineWidth = 1 * devicePixelRatio;
+      ctx.strokeStyle = "#263244";
+      // determine world bounds visible
+      const inv = (x,y)=>({x:(x-view.ox)/view.scale, y:(y-view.oy)/view.scale});
+      const topL = inv(0,0), botR = inv(cv.width, cv.height);
+      const xStart = Math.floor(topL.x / grid) * grid;
+      const yStart = Math.floor(topL.y / grid) * grid;
+      for(let x=xStart; x<=botR.x; x+=grid){
+        const a = worldToScreen({x,y:topL.y});
+        const b = worldToScreen({x,y:botR.y});
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      }
+      for(let y=yStart; y<=botR.y; y+=grid){
+        const a = worldToScreen({x:topL.x,y});
+        const b = worldToScreen({x:botR.x,y});
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // path
+    const loop = scene.path.loop;
+    ctx.save();
+    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.strokeStyle = "#3a4a66";
+    ctx.beginPath();
+    for(let i=0;i<loop.length;i++){
+      const p = worldToScreen(loop[i]);
+      if (i===0) ctx.moveTo(p.x,p.y);
+      else ctx.lineTo(p.x,p.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // trace
+    if (trace.length>1){
+      ctx.save();
+      ctx.lineWidth = 2 * devicePixelRatio;
+      ctx.strokeStyle = "#6b7fa6";
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      for(let i=0;i<trace.length;i++){
+        const p = worldToScreen(trace[i]);
+        if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // mechanism
+    const {S1,S2,F,J,ok} = scene;
+    const ps1 = worldToScreen(S1);
+    const ps2 = worldToScreen(S2);
+    const pf  = worldToScreen(F);
+
+    // draw servos
+    ctx.save();
+    ctx.fillStyle = "#b7c7e2";
+    ctx.strokeStyle = "#b7c7e2";
+    ctx.lineWidth = 2 * devicePixelRatio;
+
+    const r = 4 * devicePixelRatio;
+    ctx.beginPath(); ctx.arc(ps1.x,ps1.y,r,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ps2.x,ps2.y,r,0,Math.PI*2); ctx.fill();
+
+    // foot
+    ctx.fillStyle = ok ? "#a8ffcf" : "#ffb4a8";
+    ctx.beginPath(); ctx.arc(pf.x,pf.y,5*devicePixelRatio,0,Math.PI*2); ctx.fill();
+
+    if (ok){
+      const pj = worldToScreen(J);
+
+      // links
+      ctx.strokeStyle = "#e7edf6";
+      ctx.lineWidth = 3 * devicePixelRatio;
+      ctx.beginPath();
+      ctx.moveTo(ps1.x,ps1.y); ctx.lineTo(pj.x,pj.y);
+      ctx.moveTo(ps2.x,ps2.y); ctx.lineTo(pj.x,pj.y);
+      ctx.lineTo(pf.x,pf.y);
+      ctx.stroke();
+
+      // knee joint
+      ctx.fillStyle = "#e7edf6";
+      ctx.beginPath(); ctx.arc(pj.x,pj.y,4.5*devicePixelRatio,0,Math.PI*2); ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // ---- Main loop
+  function computeScene(dt){
+    const d  = +ui.d.value;
+    const yS = +ui.yS.value;
+    const L1 = Math.max(1, +ui.L1.value);
+    const L2 = Math.max(1, +ui.L2.value);
+    const L3 = Math.max(1, +ui.L3.value);
+    const v  = Math.max(1, +ui.v.value);
+
+    const S1 = {x: -d/2, y: yS};
+    const S2 = {x:  d/2, y: yS};
+
+    const path = buildWaypoints();
+    const lenInfo = polylineLengths(path.loop);
+
+    if (running){
+      sTravel += v * dt; // mm
+    }
+    const F = pointOnPolyline(path.loop, lenInfo, sTravel);
+
+    const sol = solveKnee(S1,S2,L1,L2,F,L3);
+
+    let J = null;
+    let ok = false;
+    let theta1 = null, theta2 = null;
+
+    if (sol.ok){
+      ok = true;
+      J = sol.J;
+      theta1 = angDeg(sub(J,S1));
+      theta2 = angDeg(sub(J,S2));
+      ui.theta1.textContent = theta1.toFixed(1);
+      ui.theta2.textContent = theta2.toFixed(1);
+      ui.status.textContent = "OK";
+      ui.status.className = "ok";
+
+      // update trace
+      const maxTrace = clamp(parseInt(ui.traceN.value||'300',10), 50, 5000);
+      trace.push(F);
+      if (trace.length > maxTrace) trace.shift();
+    } else {
+      ui.theta1.textContent = "—";
+      ui.theta2.textContent = "—";
+      ui.status.textContent = "到達不能: " + sol.reason;
+      ui.status.className = "warn";
+      // keep trace but don't add
+    }
+
+    // fit view using key points
+    const ptsForFit = [
+      S1,S2,
+      ...path.loop,
+      ...(ok ? [J,F] : [F]),
+    ];
+    fitToScene(ptsForFit);
+
+    return {S1,S2,F,J,ok,path};
+  }
+
+  function tick(ts){
+    if (!tPrev) tPrev = ts;
+    const dt = (ts - tPrev) / 1000; // sec
+    tPrev = ts;
+
+    const scene = computeScene(Math.min(dt, 0.05));
+    draw(scene);
+
+    requestAnimationFrame(tick);
+  }
+
+  // ---- Events
+  ui.play.addEventListener('click', ()=>{
+    running = !running;
+    ui.play.textContent = running ? "⏸ 一時停止" : "▶ 再生";
+  });
+  ui.reset.addEventListener('click', ()=>{
+    resetSim();
+  });
+
+  // reset trace when geometry changes a lot (lightly)
+  const resetOn = ["d","yS","L1","L2","L3","y0","W","N","h"];
+  resetOn.forEach(id=>{
+    ui[id].addEventListener('input', ()=>{ trace = []; });
+  });
+
+  // init
+  resize();
+  resetSim();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
