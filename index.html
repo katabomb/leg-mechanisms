@@ -1,482 +1,594 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>2サーボ脚シミュレータ（合流膝＋遠位1本）</title>
-  <style>
-    :root { --bg:#0b0f14; --panel:#121824; --text:#e7edf6; --muted:#9fb0c4; --line:#263244; }
-    html,body{height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; background:var(--bg); color:var(--text);}
-    .wrap{display:grid; grid-template-columns: 360px 1fr; gap:12px; height:100%; box-sizing:border-box; padding:12px;}
-    .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; overflow:auto;}
-    canvas{width:100%; height:100%; background:#070a0f; border:1px solid var(--line); border-radius:12px;}
-    h1{font-size:16px; margin:0 0 10px;}
-    .row{display:grid; grid-template-columns: 1fr 110px; gap:8px; align-items:center; margin:8px 0;}
-    label{font-size:12px; color:var(--muted);}
-    input[type="number"], input[type="range"], button, select{
-      width:100%; box-sizing:border-box; background:#0b1220; color:var(--text);
-      border:1px solid var(--line); border-radius:10px; padding:8px;
-    }
-    input[type="range"]{padding:0; height:34px;}
-    .two{display:grid; grid-template-columns: 1fr 1fr; gap:8px;}
-    .btns{display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:10px;}
-    .pill{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
-    .tag{border:1px solid var(--line); border-radius:999px; padding:6px 10px; font-size:12px; color:var(--muted);}
-    .warn{color:#ffb4a8}
-    .ok{color:#a8ffcf}
-    .small{font-size:12px; color:var(--muted); line-height:1.5;}
-    .hr{height:1px; background:var(--line); margin:10px 0;}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>2サーボ くの字脚シミュレータ</title>
+<style>
+  :root { --bg:#0b0f14; --fg:#e8eef7; --mut:#9fb0c3; --card:#121a24; --line:#223041; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif; background:var(--bg); color:var(--fg); }
+  header{ padding:14px 16px; border-bottom:1px solid var(--line); }
+  header h1{ margin:0; font-size:16px; font-weight:650; }
+  header p{ margin:6px 0 0; color:var(--mut); font-size:12px; line-height:1.4; }
+  main{ display:grid; grid-template-columns: 1.1fr 0.9fr; gap:12px; padding:12px; }
+  @media (max-width: 980px){ main{ grid-template-columns: 1fr; } }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .card .hd{ padding:10px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .card .hd .ttl{ font-size:13px; color:var(--fg); font-weight:650; }
+  .card .bd{ padding:12px; }
+  canvas{ width:100%; height:auto; display:block; background:linear-gradient(180deg,#0b0f14,#0a111a); }
+  .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .row{ display:grid; grid-template-columns: 1fr; gap:6px; padding:8px; border:1px solid var(--line); border-radius:10px; }
+  .row label{ font-size:12px; color:var(--mut); display:flex; justify-content:space-between; gap:8px; }
+  input[type="range"]{ width:100%; }
+  input[type="number"]{ width:100%; padding:8px; border-radius:10px; border:1px solid var(--line); background:#0b1119; color:var(--fg); }
+  .btns{ display:flex; flex-wrap:wrap; gap:8px; }
+  button{
+    cursor:pointer; border:1px solid var(--line); background:#0b1119; color:var(--fg);
+    padding:8px 10px; border-radius:10px; font-size:12px; font-weight:650;
+  }
+  button.primary{ background:#132235; border-color:#2a4a71; }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  .small{ font-size:12px; color:var(--mut); line-height:1.45; }
+  .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; color:var(--mut); }
+</style>
 </head>
 <body>
-<div class="wrap">
-  <div class="panel">
-    <h1>2サーボ脚シミュレータ（合流膝＋遠位1本）</h1>
-    <div class="small">
-      モデル：サーボS1,S2（同じ高さ）→近位バー2本が膝Jで合流→遠位バー(J→足先F)。<br>
-      目標足先Fは「水平線上の点＋中点直上1点」を通る折れ線ループを等速で移動します。
-    </div>
+<header>
+  <h1>2個の180°サーボで動く「二又→くの字→足先」脚：通過点（蒲鉾/三角形っぽい軌跡）シミュレータ</h1>
+  <p>
+    同じ高さの左右2サーボ（股関節）→近位バー2本→遠位バー1本（すね）に別位置で接続→足先。
+    目標点を等速でなぞるように、毎フレーム「足先が最も近くなる2角度」を探索します。
+  </p>
+</header>
 
-    <div class="hr"></div>
-
-    <div class="two">
-      <div>
-        <label>サーボ間隔 d (mm)</label>
-        <input id="d" type="number" value="40" step="1" />
-      </div>
-      <div>
-        <label>サーボ高さ yS (mm)</label>
-        <input id="yS" type="number" value="0" step="1" />
-      </div>
-    </div>
-
-    <div class="two">
-      <div>
-        <label>近位長 L1: S1→J (mm)</label>
-        <input id="L1" type="number" value="55" step="1" />
-      </div>
-      <div>
-        <label>近位長 L2: S2→J (mm)</label>
-        <input id="L2" type="number" value="55" step="1" />
+<main>
+  <section class="card">
+    <div class="hd">
+      <div class="ttl">ビュー</div>
+      <div class="btns">
+        <button id="btnPlay" class="primary">▶ 再生</button>
+        <button id="btnPause" disabled>⏸ 停止</button>
+        <button id="btnReset">↺ リセット</button>
+        <button id="btnSnap">⦿ いまの角度を固定/解除</button>
       </div>
     </div>
-
-    <div class="row">
-      <label>遠位長 L3: J→F (mm)</label>
-      <input id="L3" type="number" value="70" step="1" />
-    </div>
-
-    <div class="hr"></div>
-
-    <div class="two">
-      <div>
-        <label>地面高さ y0 (mm)</label>
-        <input id="y0" type="number" value="120" step="1" />
+    <canvas id="cv" width="980" height="700"></canvas>
+    <div class="bd">
+      <div class="small">
+        <b>ヒント：</b>「中央上の点（持ち上げ）」の高さを上げるほど三角形っぽくなります。水平点のyを0にすると分かりやすいです。<br/>
+        機構が厳密に閉じない場合は（理想剛体だと起こりがち）、「許容誤差（fit）」として表示されます。
       </div>
-      <div>
-        <label>スパン幅 W (mm)</label>
-        <input id="W" type="number" value="80" step="1" />
+      <div class="mono" id="status"></div>
+    </div>
+  </section>
+
+  <aside class="card">
+    <div class="hd"><div class="ttl">パラメータ</div></div>
+    <div class="bd">
+      <div class="grid">
+        <div class="row">
+          <label>サーボ間距離 d <span id="v_d"></span></label>
+          <input id="d" type="range" min="40" max="180" step="1" value="110">
+        </div>
+        <div class="row">
+          <label>近位バー長 Lp <span id="v_Lp"></span></label>
+          <input id="Lp" type="range" min="40" max="180" step="1" value="95">
+        </div>
+        <div class="row">
+          <label>遠位バー上の接続点 a（足先→左接続）<span id="v_a"></span></label>
+          <input id="a" type="range" min="15" max="180" step="1" value="70">
+        </div>
+        <div class="row">
+          <label>遠位バー上の接続点 b（足先→右接続）<span id="v_b"></span></label>
+          <input id="b" type="range" min="25" max="220" step="1" value="125">
+        </div>
+        <div class="row">
+          <label>足先→膝（くの字の曲がり）距離 c <span id="v_c"></span></label>
+          <input id="c" type="range" min="40" max="220" step="1" value="155">
+        </div>
+        <div class="row">
+          <label>探索粗さ（角度刻み）deg <span id="v_step"></span></label>
+          <input id="stepDeg" type="range" min="2" max="10" step="1" value="5">
+        </div>
+        <div class="row">
+          <label>探索の微調整回数 <span id="v_refine"></span></label>
+          <input id="refine" type="range" min="0" max="40" step="1" value="18">
+        </div>
+        <div class="row">
+          <label>速度（点間の等速） <span id="v_speed"></span></label>
+          <input id="speed" type="range" min="20" max="250" step="1" value="90">
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:14px 0;">
+
+      <div class="row">
+        <label>通過点（水平ライン y） <span id="v_y0"></span></label>
+        <input id="y0" type="range" min="-80" max="120" step="1" value="0">
+      </div>
+      <div class="grid">
+        <div class="row">
+          <label>水平点の数 N（4〜6） <span id="v_N"></span></label>
+          <input id="N" type="range" min="4" max="6" step="1" value="5">
+        </div>
+        <div class="row">
+          <label>水平点の幅 W <span id="v_W"></span></label>
+          <input id="W" type="range" min="80" max="360" step="1" value="220">
+        </div>
+        <div class="row">
+          <label>中央上点の高さ H <span id="v_H"></span></label>
+          <input id="H" type="range" min="20" max="260" step="1" value="130">
+        </div>
+        <div class="row">
+          <label>軌跡の表示点数 <span id="v_tail"></span></label>
+          <input id="tail" type="range" min="50" max="800" step="10" value="280">
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:14px 0;">
+      <div class="row">
+        <label>サーボ角の範囲（度）</label>
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:8px;">
+          <div>
+            <label class="small">min</label>
+            <input id="amin" type="number" value="-20">
+          </div>
+          <div>
+            <label class="small">max</label>
+            <input id="amax" type="number" value="200">
+          </div>
+        </div>
+        <div class="small">※180°サーボを想定しつつ、探索のため少し広めにもできます（実機に合わせて調整）。</div>
       </div>
     </div>
-
-    <div class="two">
-      <div>
-        <label>水平点の数 N (4〜6推奨)</label>
-        <input id="N" type="number" value="5" min="3" max="12" step="1" />
-      </div>
-      <div>
-        <label>頂点の高さ h (mm)</label>
-        <input id="h" type="number" value="35" step="1" />
-      </div>
-    </div>
-
-    <div class="row">
-      <label>足先速度 v (mm/s)</label>
-      <input id="v" type="number" value="60" step="5" />
-    </div>
-
-    <div class="row">
-      <label>軌跡表示（点数）</label>
-      <input id="traceN" type="number" value="300" min="50" max="2000" step="50" />
-    </div>
-
-    <div class="btns">
-      <button id="play">▶ 再生</button>
-      <button id="reset">⟲ リセット</button>
-    </div>
-
-    <div class="pill">
-      <div class="tag">θ1: <span id="theta1">—</span>°</div>
-      <div class="tag">θ2: <span id="theta2">—</span>°</div>
-      <div class="tag">状態: <span id="status" class="warn">未計算</span></div>
-    </div>
-
-    <div class="hr"></div>
-    <div class="small">
-      <b>注意</b>：このモデルは「膝Jが <i>3つの円</i>（S1中心L1、S2中心L2、足先中心L3）の交点になる」前提です。<br>
-      パラメータによっては到達不能になります（その場合は状態が赤表示）。
-    </div>
-  </div>
-
-  <div style="display:flex; flex-direction:column; gap:12px;">
-    <canvas id="cv"></canvas>
-  </div>
-</div>
+  </aside>
+</main>
 
 <script>
-(() => {
-  // ---- DOM
-  const cv = document.getElementById('cv');
-  const ctx = cv.getContext('2d');
+/** ---------- ユーティリティ ---------- **/
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const deg2rad = d => d * Math.PI / 180;
+const rad2deg = r => r * 180 / Math.PI;
 
-  const el = (id)=>document.getElementById(id);
-  const ui = {
-    d: el('d'), yS: el('yS'), L1: el('L1'), L2: el('L2'), L3: el('L3'),
-    y0: el('y0'), W: el('W'), N: el('N'), h: el('h'),
-    v: el('v'), traceN: el('traceN'),
-    play: el('play'), reset: el('reset'),
-    theta1: el('theta1'), theta2: el('theta2'), status: el('status'),
+function vlen(p){ return Math.hypot(p.x, p.y); }
+function vsub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
+function vadd(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
+function vmul(a,s){ return {x:a.x*s, y:a.y*s}; }
+function vdot(a,b){ return a.x*b.x + a.y*b.y; }
+function vnorm(a){ const L=vlen(a)||1e-9; return {x:a.x/L, y:a.y/L}; }
+
+function lerp(a,b,t){ return a + (b-a)*t; }
+function lerp2(p,q,t){ return {x:lerp(p.x,q.x,t), y:lerp(p.y,q.y,t)}; }
+
+/** ---------- モデル ----------
+ * 左右のサーボ原点 O1, O2（同じ高さ）
+ * 近位バー：O1->P, O2->Q（長さ Lp, 角度 th1, th2）
+ * 遠位バー：足先 F から上方向に伸びる剛体バー（方向 u）
+ *   左接続点：F + a*u  == P（理想）
+ *   右接続点：F + b*u  == Q（理想）
+ * ただし厳密に閉じない場合があるので、
+ *   u = normalize(Q-P), F = P - a*u として近似し、右側誤差をfitとして扱う。
+ * さらに「膝点（くの字の曲がり）」K = F + c*u（表示用）
+ */
+function forwardKinematics(params, th1, th2){
+  const {O1,O2,Lp,a,b,c} = params;
+  const P = vadd(O1, {x: Lp*Math.cos(th1), y: Lp*Math.sin(th1)});
+  const Q = vadd(O2, {x: Lp*Math.cos(th2), y: Lp*Math.sin(th2)});
+
+  const u = vnorm(vsub(Q,P));
+  const F = vsub(P, vmul(u,a));           // 左接続点を厳密一致
+  const Qpred = vadd(F, vmul(u,b));       // 右接続点の予測
+  const fit = vlen(vsub(Qpred, Q));       // 閉鎖誤差（小さいほど理想）
+  const K = vadd(F, vmul(u,c));           // くの字の曲がり（膝）点（表示用）
+
+  return {P,Q,F,K,u,fit, Qpred};
+}
+
+/** 目標足先に対して th1, th2 を探索（粗探索＋簡易微調整） */
+function solveAngles(params, target, opt){
+  const amin = deg2rad(opt.aminDeg);
+  const amax = deg2rad(opt.amaxDeg);
+  const step = deg2rad(opt.stepDeg);
+
+  // 1) 粗い格子探索
+  let best = {th1:0, th2:0, score:1e18, fk:null};
+  for(let th1=amin; th1<=amax+1e-9; th1+=step){
+    for(let th2=amin; th2<=amax+1e-9; th2+=step){
+      const fk = forwardKinematics(params, th1, th2);
+      const eFoot = vlen(vsub(fk.F, target));
+      // fit も少しペナルティに
+      const score = eFoot*eFoot + 0.25*(fk.fit*fk.fit);
+      if(score < best.score){
+        best = {th1, th2, score, fk};
+      }
+    }
+  }
+
+  // 2) 近傍ランダム微調整（ヒルクライム）
+  let th1 = best.th1, th2 = best.th2;
+  let curScore = best.score;
+  let curFK = best.fk;
+
+  let radius = step * 1.4;
+  for(let i=0; i<opt.refineIters; i++){
+    const cand1 = clamp(th1 + (Math.random()*2-1)*radius, amin, amax);
+    const cand2 = clamp(th2 + (Math.random()*2-1)*radius, amin, amax);
+    const fk = forwardKinematics(params, cand1, cand2);
+    const eFoot = vlen(vsub(fk.F, target));
+    const score = eFoot*eFoot + 0.25*(fk.fit*fk.fit);
+    if(score < curScore){
+      th1 = cand1; th2 = cand2;
+      curScore = score;
+      curFK = fk;
+      radius *= 0.97;
+    }else{
+      radius *= 0.995;
+    }
+  }
+
+  return {th1, th2, fk:curFK, score:curScore};
+}
+
+/** ---------- 通過点（蒲鉾/二等辺三角形っぽい）生成 ----------
+ * 水平点 N 個：x を等間隔、y = y0
+ * 中央上点：x=0, y = y0 + H
+ * ループ：水平左端→...→右端→中央上→左端（戻る）
+ */
+function buildWaypoints(N, W, y0, H){
+  const pts = [];
+  const half = W/2;
+  for(let i=0; i<N; i++){
+    const t = (N===1)?0.5 : i/(N-1);
+    pts.push({x: lerp(-half, half, t), y: y0});
+  }
+  const apex = {x:0, y: y0 + H};
+  // ループ構成：水平列 + apex + 最初へ
+  const loop = [...pts, apex, pts[0]];
+  return loop;
+}
+
+/** 点列を「等速」で進むため、各セグメント長に応じて進行 */
+function makePathWalker(points){
+  // セグメント長と累積長
+  const seg = [];
+  let total = 0;
+  for(let i=0; i<points.length-1; i++){
+    const a = points[i], b = points[i+1];
+    const L = vlen(vsub(b,a));
+    seg.push({i, L, a, b, start: total});
+    total += L;
+  }
+  return {
+    total,
+    at(s){ // s: 0..total
+      if(total<1e-9) return points[0];
+      s = ((s%total)+total)%total;
+      // どのセグメント？
+      let k = seg.length-1;
+      for(let i=0; i<seg.length; i++){
+        if(s >= seg[i].start && s <= seg[i].start + seg[i].L + 1e-9){ k=i; break; }
+      }
+      const sg = seg[k];
+      const t = (sg.L<1e-9)?0 : (s - sg.start)/sg.L;
+      return lerp2(sg.a, sg.b, clamp(t,0,1));
+    }
   };
+}
 
-  // ---- Helpers
-  const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
-  const hypot = Math.hypot;
-  const dist = (a,b)=>hypot(a.x-b.x, a.y-b.y);
-  const add = (a,b)=>({x:a.x+b.x,y:a.y+b.y});
-  const sub = (a,b)=>({x:a.x-b.x,y:a.y-b.y});
-  const mul = (a,s)=>({x:a.x*s,y:a.y*s});
-  const dot = (a,b)=>a.x*b.x+a.y*b.y;
-  const angDeg = (v)=>Math.atan2(v.y, v.x) * 180/Math.PI;
+/** ---------- UI ---------- **/
+const $ = id => document.getElementById(id);
 
-  function resize() {
-    const rect = cv.getBoundingClientRect();
-    cv.width = Math.floor(rect.width * devicePixelRatio);
-    cv.height = Math.floor(rect.height * devicePixelRatio);
-    ctx.setTransform(1,0,0,1,0,0);
+const cv = $("cv");
+const ctx = cv.getContext("2d");
+
+const statusEl = $("status");
+const btnPlay = $("btnPlay");
+const btnPause = $("btnPause");
+const btnReset = $("btnReset");
+const btnSnap = $("btnSnap");
+
+let running = false;
+let snapAngles = false;
+
+// 表示のスケールと原点
+function worldToScreen(p){
+  const S = view.scale;
+  return { x: view.cx + p.x*S, y: view.cy - p.y*S };
+}
+function screenToWorld(p){
+  const S = view.scale;
+  return { x: (p.x - view.cx)/S, y: (view.cy - p.y)/S };
+}
+
+const view = {
+  scale: 2.0,
+  cx: cv.width * 0.52,
+  cy: cv.height * 0.62
+};
+
+// 拡大縮小（ホイール）
+cv.addEventListener("wheel", (e)=>{
+  e.preventDefault();
+  const s = view.scale;
+  const factor = (e.deltaY>0) ? 0.92 : 1.08;
+  view.scale = clamp(s*factor, 0.7, 5.5);
+},{passive:false});
+
+// クリックで目標点をその場に（テスト用）
+let manualTarget = null;
+cv.addEventListener("pointerdown",(e)=>{
+  const rect = cv.getBoundingClientRect();
+  const p = {x:(e.clientX-rect.left)*(cv.width/rect.width), y:(e.clientY-rect.top)*(cv.height/rect.height)};
+  manualTarget = screenToWorld(p);
+});
+
+// パラメータ取得
+function getParams(){
+  const d = +$("d").value;
+  const Lp = +$("Lp").value;
+  const a = +$("a").value;
+  const b = +$("b").value;
+  const c = +$("c").value;
+
+  // サーボ原点（左右）
+  const O1 = {x: -d/2, y: 140};
+  const O2 = {x:  d/2, y: 140};
+
+  return {d,Lp,a,b,c,O1,O2};
+}
+
+function getPathSettings(){
+  const N = +$("N").value;
+  const W = +$("W").value;
+  const y0 = +$("y0").value;
+  const H = +$("H").value;
+  return {N,W,y0,H};
+}
+
+function getSolveOptions(){
+  return {
+    aminDeg: +$("amin").value,
+    amaxDeg: +$("amax").value,
+    stepDeg: +$("stepDeg").value,
+    refineIters: +$("refine").value,
+  };
+}
+
+function updateLabels(){
+  const map = [
+    ["d","v_d","px"], ["Lp","v_Lp","px"], ["a","v_a","px"], ["b","v_b","px"], ["c","v_c","px"],
+    ["stepDeg","v_step","°"], ["refine","v_refine",""], ["speed","v_speed","px/s"],
+    ["y0","v_y0",""], ["N","v_N",""], ["W","v_W",""], ["H","v_H",""], ["tail","v_tail",""]
+  ];
+  for(const [id,vid,suf] of map){
+    const v = $(id).value;
+    $(vid).textContent = suf ? `${v}${suf}` : `${v}`;
   }
-  window.addEventListener('resize', resize);
+}
+document.querySelectorAll("input").forEach(inp=>inp.addEventListener("input", updateLabels));
+updateLabels();
 
-  // ---- World <-> Screen
-  // World: x right, y down (扱いやすさ優先). ただし「直上」を視覚的に上へ＝yが小さい方向にする。
-  // なので y0 は大きいほど下、h は上に持ち上げる（y0 - h）。
-  let view = {scale: 3.2, ox: 0, oy: 0}; // will set in fit()
+/** ---------- アニメーション状態 ---------- **/
+let tPrev = null;
+let sAlong = 0; // path arclength
+let tail = [];  // 足先軌跡
+let thHold = {th1: deg2rad(70), th2: deg2rad(110)}; // 初期角
 
-  function worldToScreen(p){
-    return {x: p.x*view.scale + view.ox, y: p.y*view.scale + view.oy};
+function reset(){
+  tPrev = null;
+  sAlong = 0;
+  tail = [];
+  manualTarget = null;
+  thHold = {th1: deg2rad(70), th2: deg2rad(110)};
+}
+reset();
+
+/** ---------- 描画 ---------- **/
+function drawScene(params, waypoints, target, sol){
+  ctx.clearRect(0,0,cv.width,cv.height);
+
+  // グリッド
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.strokeStyle = "#2a3645";
+  ctx.lineWidth = 1;
+  const step = 50;
+  for(let x=0; x<=cv.width; x+=step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,cv.height); ctx.stroke(); }
+  for(let y=0; y<=cv.height; y+=step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(cv.width,y); ctx.stroke(); }
+  ctx.restore();
+
+  // 座標軸
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = "#2f4560";
+  ctx.lineWidth = 2;
+  const o = worldToScreen({x:0,y:0});
+  ctx.beginPath(); ctx.moveTo(0,o.y); ctx.lineTo(cv.width,o.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(o.x,0); ctx.lineTo(o.x,cv.height); ctx.stroke();
+  ctx.restore();
+
+  // 通過点＆線
+  ctx.save();
+  ctx.strokeStyle = "#6f93be";
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 2;
+  for(let i=0; i<waypoints.length-1; i++){
+    const a = worldToScreen(waypoints[i]);
+    const b = worldToScreen(waypoints[i+1]);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
   }
-
-  function fitToScene(scenePts){
-    // add margins and fit to canvas
-    const pad = 30 * devicePixelRatio;
-    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-    for(const p of scenePts){
-      minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x);
-      minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y);
-    }
-    const w = (maxX-minX) || 1;
-    const h = (maxY-minY) || 1;
-    const sx = (cv.width - 2*pad)/w;
-    const sy = (cv.height - 2*pad)/h;
-    view.scale = Math.min(sx,sy);
-    view.ox = pad - minX*view.scale;
-    view.oy = pad - minY*view.scale;
+  ctx.globalAlpha = 0.9;
+  for(const p of waypoints){
+    const s = worldToScreen(p);
+    ctx.fillStyle = "#9ec0ff";
+    ctx.beginPath(); ctx.arc(s.x,s.y,4,0,Math.PI*2); ctx.fill();
   }
+  ctx.restore();
 
-  // ---- Circle intersection (two circles)
-  function circleIntersections(c1, r1, c2, r2){
-    const d = dist(c1,c2);
-    if (d > r1 + r2) return [];          // separate
-    if (d < Math.abs(r1 - r2)) return []; // contained
-    if (d === 0 && r1 === r2) return [];  // infinite (degenerate)
-    // point along line between centers
-    const a = (r1*r1 - r2*r2 + d*d) / (2*d);
-    const h2 = r1*r1 - a*a;
-    if (h2 < -1e-9) return [];
-    const h = Math.sqrt(Math.max(0,h2));
-    const v = {x:(c2.x-c1.x)/d, y:(c2.y-c1.y)/d};
-    const p = {x:c1.x + a*v.x, y:c1.y + a*v.y};
-    const perp = {x:-v.y, y:v.x};
-    const p1 = {x:p.x + h*perp.x, y:p.y + h*perp.y};
-    const p2 = {x:p.x - h*perp.x, y:p.y - h*perp.y};
-    if (h < 1e-9) return [p1];
-    return [p1,p2];
-  }
-
-  // ---- Path (polyline loop with equal speed)
-  function buildWaypoints(){
-    const y0 = +ui.y0.value;
-    const W  = +ui.W.value;
-    const N  = clamp(parseInt(ui.N.value||'5',10), 3, 30);
-    const h  = +ui.h.value;
-
-    const x0 = -W/2;
-    const x1 =  W/2;
-
-    const pts = [];
-    // N points on horizontal line y0
-    for(let i=0;i<N;i++){
-      const t = (N===1)?0.5:i/(N-1);
-      pts.push({x: x0 + (x1-x0)*t, y: y0});
-    }
-    // apex at midpoint, directly above
-    const apex = {x: 0, y: y0 - h};
-
-    // loop order: left->right along ground points, then apex, then back to left (closing)
-    const loop = pts.concat([apex, pts[0]]);
-    return {ground: pts, apex, loop};
-  }
-
-  function polylineLengths(poly){
-    const seg = [];
-    let total = 0;
-    for(let i=0;i<poly.length-1;i++){
-      const L = dist(poly[i], poly[i+1]);
-      seg.push(L);
-      total += L;
-    }
-    return {seg,total};
-  }
-
-  function pointOnPolyline(poly, lenInfo, s){
-    // s in [0,total)
-    let d = ((s % lenInfo.total) + lenInfo.total) % lenInfo.total;
-    for(let i=0;i<lenInfo.seg.length;i++){
-      const L = lenInfo.seg[i];
-      if (d <= L){
-        const a = poly[i], b = poly[i+1];
-        const t = (L<1e-9)?0:(d/L);
-        return {x: a.x + (b.x-a.x)*t, y: a.y + (b.y-a.y)*t};
-      }
-      d -= L;
-    }
-    return poly[poly.length-1];
-  }
-
-  // ---- IK: given foot F, solve knee J from intersection of circles (S1,L1) & (S2,L2), then pick the one matching |J-F|≈L3.
-  function solveKnee(S1,S2,L1,L2,F,L3){
-    const cand = circleIntersections(S1,L1,S2,L2);
-    if (cand.length===0) return {ok:false, reason:"S1-S2円が交わらない"};
-    // choose candidate with distance to foot closest to L3
-    let best=null, bestErr=Infinity;
-    for(const J of cand){
-      const e = Math.abs(dist(J,F)-L3);
-      if (e < bestErr){
-        bestErr = e;
-        best = J;
-      }
-    }
-    const tol = 1.5; // mm
-    if (bestErr > tol) return {ok:false, reason:`膝がL3条件を満たさない (誤差${bestErr.toFixed(1)}mm)`};
-    return {ok:true, J:best};
-  }
-
-  // ---- State
-  let running = false;
-  let tPrev = 0;
-  let sTravel = 0; // traveled length along path
-  let trace = [];  // foot trace points
-
-  function resetSim(){
-    sTravel = 0;
-    trace = [];
-    ui.status.textContent = "リセット";
-    ui.status.className = "warn";
-    ui.theta1.textContent = "—";
-    ui.theta2.textContent = "—";
-  }
-
-  // ---- Draw
-  function draw(scene){
-    ctx.clearRect(0,0,cv.width,cv.height);
-
-    // background grid (world mm grid)
-    const grid = 10; // mm
-    // decide grid step in px
-    const stepPx = grid*view.scale;
-    const minStep = 18 * devicePixelRatio;
-    const useGrid = stepPx >= minStep;
-
-    if (useGrid){
-      ctx.save();
-      ctx.globalAlpha = 0.18;
-      ctx.lineWidth = 1 * devicePixelRatio;
-      ctx.strokeStyle = "#263244";
-      // determine world bounds visible
-      const inv = (x,y)=>({x:(x-view.ox)/view.scale, y:(y-view.oy)/view.scale});
-      const topL = inv(0,0), botR = inv(cv.width, cv.height);
-      const xStart = Math.floor(topL.x / grid) * grid;
-      const yStart = Math.floor(topL.y / grid) * grid;
-      for(let x=xStart; x<=botR.x; x+=grid){
-        const a = worldToScreen({x,y:topL.y});
-        const b = worldToScreen({x,y:botR.y});
-        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-      }
-      for(let y=yStart; y<=botR.y; y+=grid){
-        const a = worldToScreen({x:topL.x,y});
-        const b = worldToScreen({x:botR.x,y});
-        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // path
-    const loop = scene.path.loop;
-    ctx.save();
-    ctx.lineWidth = 2 * devicePixelRatio;
-    ctx.strokeStyle = "#3a4a66";
+  // 足先軌跡 tail
+  ctx.save();
+  ctx.strokeStyle = "#f5c96b";
+  ctx.globalAlpha = 0.7;
+  ctx.lineWidth = 2;
+  if(tail.length>1){
     ctx.beginPath();
-    for(let i=0;i<loop.length;i++){
-      const p = worldToScreen(loop[i]);
-      if (i===0) ctx.moveTo(p.x,p.y);
-      else ctx.lineTo(p.x,p.y);
+    let p0 = worldToScreen(tail[0]);
+    ctx.moveTo(p0.x,p0.y);
+    for(let i=1;i<tail.length;i++){
+      const p = worldToScreen(tail[i]);
+      ctx.lineTo(p.x,p.y);
     }
     ctx.stroke();
-    ctx.restore();
+  }
+  ctx.restore();
 
-    // trace
-    if (trace.length>1){
-      ctx.save();
-      ctx.lineWidth = 2 * devicePixelRatio;
-      ctx.strokeStyle = "#6b7fa6";
-      ctx.globalAlpha = 0.8;
-      ctx.beginPath();
-      for(let i=0;i<trace.length;i++){
-        const p = worldToScreen(trace[i]);
-        if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
+  // 機構
+  const fk = sol.fk;
+  const O1s = worldToScreen(params.O1);
+  const O2s = worldToScreen(params.O2);
+  const Ps = worldToScreen(fk.P);
+  const Qs = worldToScreen(fk.Q);
+  const Fs = worldToScreen(fk.F);
+  const Ks = worldToScreen(fk.K);
 
-    // mechanism
-    const {S1,S2,F,J,ok} = scene;
-    const ps1 = worldToScreen(S1);
-    const ps2 = worldToScreen(S2);
-    const pf  = worldToScreen(F);
+  // サーボベース
+  ctx.save();
+  ctx.strokeStyle = "#d5e6ff";
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(O1s.x,O1s.y); ctx.lineTo(O2s.x,O2s.y); ctx.stroke();
+  ctx.restore();
 
-    // draw servos
-    ctx.save();
-    ctx.fillStyle = "#b7c7e2";
-    ctx.strokeStyle = "#b7c7e2";
-    ctx.lineWidth = 2 * devicePixelRatio;
+  // 近位バー
+  ctx.save();
+  ctx.strokeStyle = "#e8eef7";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(O1s.x,O1s.y); ctx.lineTo(Ps.x,Ps.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(O2s.x,O2s.y); ctx.lineTo(Qs.x,Qs.y); ctx.stroke();
+  ctx.restore();
 
-    const r = 4 * devicePixelRatio;
-    ctx.beginPath(); ctx.arc(ps1.x,ps1.y,r,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ps2.x,ps2.y,r,0,Math.PI*2); ctx.fill();
+  // 遠位バー（足先->上方向）
+  ctx.save();
+  ctx.strokeStyle = "#e8eef7";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "round";
+  // 遠位バーを「足先 F から b だけ上の点」まで描く
+  const top = vadd(fk.F, vmul(fk.u, params.b));
+  const tops = worldToScreen(top);
+  ctx.beginPath(); ctx.moveTo(Fs.x,Fs.y); ctx.lineTo(tops.x,tops.y); ctx.stroke();
+  ctx.restore();
 
-    // foot
-    ctx.fillStyle = ok ? "#a8ffcf" : "#ffb4a8";
-    ctx.beginPath(); ctx.arc(pf.x,pf.y,5*devicePixelRatio,0,Math.PI*2); ctx.fill();
+  // 接続点（P, Q）と膝点（K）
+  function dot(s, r, fill){
+    ctx.beginPath(); ctx.fillStyle = fill; ctx.arc(s.x,s.y,r,0,Math.PI*2); ctx.fill();
+  }
+  dot(O1s, 7, "#9ec0ff"); dot(O2s, 7, "#9ec0ff");
+  dot(Ps, 6, "#f5c96b"); dot(Qs, 6, "#f5c96b");
+  dot(Ks, 5, "#a8ffb6");
+  dot(Fs, 7, "#ff8d8d");
 
-    if (ok){
-      const pj = worldToScreen(J);
+  // 目標点
+  const Ts = worldToScreen(target);
+  ctx.save();
+  ctx.strokeStyle = "#ff8d8d";
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath(); ctx.arc(Ts.x,Ts.y,10,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(Ts.x-14,Ts.y); ctx.lineTo(Ts.x+14,Ts.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(Ts.x,Ts.y-14); ctx.lineTo(Ts.x,Ts.y+14); ctx.stroke();
+  ctx.restore();
 
-      // links
-      ctx.strokeStyle = "#e7edf6";
-      ctx.lineWidth = 3 * devicePixelRatio;
-      ctx.beginPath();
-      ctx.moveTo(ps1.x,ps1.y); ctx.lineTo(pj.x,pj.y);
-      ctx.moveTo(ps2.x,ps2.y); ctx.lineTo(pj.x,pj.y);
-      ctx.lineTo(pf.x,pf.y);
-      ctx.stroke();
+  // テキスト
+  ctx.save();
+  ctx.fillStyle = "rgba(232,238,247,0.85)";
+  ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  const th1d = rad2deg(sol.th1).toFixed(1);
+  const th2d = rad2deg(sol.th2).toFixed(1);
+  ctx.fillText(`θ1=${th1d}°, θ2=${th2d}°`, 14, 22);
+  ctx.fillText(`foot_err=${Math.sqrt(sol.score).toFixed(2)} (fit=${fk.fit.toFixed(2)})`, 14, 40);
+  ctx.fillText(`クリックで目標点を手動指定（解除はリセット）`, 14, 58);
+  ctx.restore();
+}
 
-      // knee joint
-      ctx.fillStyle = "#e7edf6";
-      ctx.beginPath(); ctx.arc(pj.x,pj.y,4.5*devicePixelRatio,0,Math.PI*2); ctx.fill();
-    }
+/** ---------- メインループ ---------- **/
+function tick(ts){
+  if(!running){ tPrev = null; return; }
+  if(tPrev==null) tPrev = ts;
+  const dt = (ts - tPrev)/1000;
+  tPrev = ts;
 
-    ctx.restore();
+  const params = getParams();
+  const ps = getPathSettings();
+  const waypoints = buildWaypoints(ps.N, ps.W, ps.y0, ps.H);
+  const walker = makePathWalker(waypoints);
+
+  const speed = +$("speed").value; // world units per sec
+  sAlong += speed * dt;
+
+  const target = manualTarget ?? walker.at(sAlong);
+
+  const opt = getSolveOptions();
+
+  let sol;
+  if(snapAngles){
+    const fk = forwardKinematics(params, thHold.th1, thHold.th2);
+    const eFoot = vlen(vsub(fk.F, target));
+    const score = eFoot*eFoot + 0.25*(fk.fit*fk.fit);
+    sol = {th1: thHold.th1, th2: thHold.th2, fk, score};
+  }else{
+    sol = solveAngles(params, target, opt);
+    thHold = {th1: sol.th1, th2: sol.th2};
   }
 
-  // ---- Main loop
-  function computeScene(dt){
-    const d  = +ui.d.value;
-    const yS = +ui.yS.value;
-    const L1 = Math.max(1, +ui.L1.value);
-    const L2 = Math.max(1, +ui.L2.value);
-    const L3 = Math.max(1, +ui.L3.value);
-    const v  = Math.max(1, +ui.v.value);
+  // tail 更新
+  tail.push(sol.fk.F);
+  const maxTail = +$("tail").value;
+  if(tail.length > maxTail) tail.splice(0, tail.length - maxTail);
 
-    const S1 = {x: -d/2, y: yS};
-    const S2 = {x:  d/2, y: yS};
+  drawScene(params, waypoints, target, sol);
 
-    const path = buildWaypoints();
-    const lenInfo = polylineLengths(path.loop);
+  statusEl.textContent =
+    `params: d=${params.d}, Lp=${params.Lp}, a=${params.a}, b=${params.b}, c=${params.c} | ` +
+    `waypoints: N=${ps.N}, W=${ps.W}, y0=${ps.y0}, H=${ps.H} | ` +
+    `solver: step=${opt.stepDeg}deg, refine=${opt.refineIters} | ` +
+    (manualTarget ? `manualTarget=(${manualTarget.x.toFixed(1)},${manualTarget.y.toFixed(1)})` : `path_s=${sAlong.toFixed(1)}`);
 
-    if (running){
-      sTravel += v * dt; // mm
-    }
-    const F = pointOnPolyline(path.loop, lenInfo, sTravel);
-
-    const sol = solveKnee(S1,S2,L1,L2,F,L3);
-
-    let J = null;
-    let ok = false;
-    let theta1 = null, theta2 = null;
-
-    if (sol.ok){
-      ok = true;
-      J = sol.J;
-      theta1 = angDeg(sub(J,S1));
-      theta2 = angDeg(sub(J,S2));
-      ui.theta1.textContent = theta1.toFixed(1);
-      ui.theta2.textContent = theta2.toFixed(1);
-      ui.status.textContent = "OK";
-      ui.status.className = "ok";
-
-      // update trace
-      const maxTrace = clamp(parseInt(ui.traceN.value||'300',10), 50, 5000);
-      trace.push(F);
-      if (trace.length > maxTrace) trace.shift();
-    } else {
-      ui.theta1.textContent = "—";
-      ui.theta2.textContent = "—";
-      ui.status.textContent = "到達不能: " + sol.reason;
-      ui.status.className = "warn";
-      // keep trace but don't add
-    }
-
-    // fit view using key points
-    const ptsForFit = [
-      S1,S2,
-      ...path.loop,
-      ...(ok ? [J,F] : [F]),
-    ];
-    fitToScene(ptsForFit);
-
-    return {S1,S2,F,J,ok,path};
-  }
-
-  function tick(ts){
-    if (!tPrev) tPrev = ts;
-    const dt = (ts - tPrev) / 1000; // sec
-    tPrev = ts;
-
-    const scene = computeScene(Math.min(dt, 0.05));
-    draw(scene);
-
-    requestAnimationFrame(tick);
-  }
-
-  // ---- Events
-  ui.play.addEventListener('click', ()=>{
-    running = !running;
-    ui.play.textContent = running ? "⏸ 一時停止" : "▶ 再生";
-  });
-  ui.reset.addEventListener('click', ()=>{
-    resetSim();
-  });
-
-  // reset trace when geometry changes a lot (lightly)
-  const resetOn = ["d","yS","L1","L2","L3","y0","W","N","h"];
-  resetOn.forEach(id=>{
-    ui[id].addEventListener('input', ()=>{ trace = []; });
-  });
-
-  // init
-  resize();
-  resetSim();
   requestAnimationFrame(tick);
+}
+
+/** ---------- ボタン ---------- **/
+btnPlay.addEventListener("click", ()=>{
+  running = true;
+  btnPlay.disabled = true;
+  btnPause.disabled = false;
+  requestAnimationFrame(tick);
+});
+btnPause.addEventListener("click", ()=>{
+  running = false;
+  btnPlay.disabled = false;
+  btnPause.disabled = true;
+});
+btnReset.addEventListener("click", ()=>{
+  reset();
+});
+btnSnap.addEventListener("click", ()=>{
+  snapAngles = !snapAngles;
+  btnSnap.textContent = snapAngles ? "⦿ 固定中（解除）" : "⦿ いまの角度を固定/解除";
+});
+
+/** 初期描画（停止状態でも見えるように） **/
+(function init(){
+  const params = getParams();
+  const ps = getPathSettings();
+  const waypoints = buildWaypoints(ps.N, ps.W, ps.y0, ps.H);
+  const target = waypoints[0];
+  const opt = getSolveOptions();
+  const sol = solveAngles(params, target, opt);
+  thHold = {th1: sol.th1, th2: sol.th2};
+  tail = [sol.fk.F];
+  drawScene(params, waypoints, target, sol);
 })();
 </script>
 </body>
